@@ -31,9 +31,36 @@ those, and the tool says so rather than letting the ambiguity pass for rigour.
 Either condition exits non-zero, because a run that failed them has not measured
 anything and should not be reported as though it had.
 
-Confidence intervals ship alongside, because 3-of-4 and 30-of-40 are not the same
-claim. At n=6 the interval is ±0.40 — the tool telling you plainly that six
-samples says almost nothing.
+## Confidence you can put in front of a client
+
+Every win rate ships with a **Wilson score interval** and an **exact binomial
+test**, and a verdict that requires both.
+
+The textbook `p ± z·sqrt(p(1-p)/n)` fails exactly where evaluation panels live —
+small n, lopsided results. At 0 or n wins it collapses to zero width, reporting
+"100%, ±0" from four comparisons. It emits bounds below 0 and above 1, which are
+not probabilities. Its real coverage below n≈40 is well under the nominal 95%, so
+it overstates confidence precisely where a reader needs the opposite.
+
+Wilson is bounded in [0,1] by construction and behaves at the extremes. It is
+asymmetric, so both bounds are reported rather than a single ± that would discard
+the asymmetry.
+
+Wilson is still an approximation, and at very small n it runs slightly liberal.
+A perfect 4-of-4 gives a Wilson lower bound of 0.5101 — excluding 0.5, so it
+would be called a win — while the exact two-sided p is 0.125. Four straight wins
+is what a fair coin does one time in eight. **A directional verdict therefore
+requires the interval to exclude 0.5 AND the exact test to reach α.**
+
+| wins/n | win rate | Wilson 95% | exact p | verdict |
+|---|---|---|---|---|
+| 4/4 | 1.000 | [0.510, 1.000] | 0.125 | inconclusive |
+| 8/11 | 0.727 | [0.434, 0.902] | 0.227 | inconclusive |
+| 80/110 | 0.727 | [0.637, 0.802] | 0.000002 | **better** |
+| 55/100 | 0.550 | [0.452, 0.644] | 0.368 | inconclusive |
+| 0/20 | 0.000 | [0.000, 0.161] | 0.000002 | **worse** |
+
+8/11 and 80/110 are the same 72.7%. Only one of them is a result.
 
 ## What it does not do
 

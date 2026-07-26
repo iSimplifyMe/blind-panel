@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPairs, manifestFor, keyFor, tally, agreementStats, sideBalance } from '../src/blind.js';
+import {
+  buildPairs, manifestFor, keyFor, tally, agreementStats, sideBalance,
+  wilsonInterval, beatsChance, exactBinomialP,
+} from '../src/blind.js';
 
 const ITEMS = ['hero', 'seam', 'wide', 'offaxis'];
 const CANDS = ['alpha', 'beta'];
@@ -81,7 +84,7 @@ test('the confidence interval narrows as n grows', () => {
   const large = keyOf(['a'], ITEMS, 's');
   const rs = tally(small, verdictsWhere(small, ['j1'], ['a']));
   const rl = tally(large, verdictsWhere(large, ['j1', 'j2', 'j3'], ['a']));
-  assert.ok(rl.candidates[0].ci95 < rs.candidates[0].ci95);
+  assert.ok(rl.candidates[0].ci95.width < rs.candidates[0].ci95.width);
 });
 
 test('unknown pairIds and invalid choices are reported, not silently dropped', () => {
@@ -194,4 +197,89 @@ test('balanced does not mean predictable — sides still vary by seed', () => {
     seen.add(buildPairs(['x'], items, `s${i}`).map((p) => p.candidateSide).join(''));
   }
   assert.ok(seen.size > 5, 'assignment is too predictable across seeds');
+});
+
+// ---------------------------------------------------------------- Wilson intervals
+
+test('Wilson stays inside [0,1] across the whole range', () => {
+  for (const n of [1, 2, 3, 5, 10, 40, 100, 1000]) {
+    for (let w = 0; w <= n; w++) {
+      const ci = wilsonInterval(w, n);
+      assert.ok(ci.lower >= 0, `lower ${ci.lower} < 0 at ${w}/${n}`);
+      assert.ok(ci.upper <= 1, `upper ${ci.upper} > 1 at ${w}/${n}`);
+      assert.ok(ci.lower <= ci.upper, `inverted at ${w}/${n}`);
+    }
+  }
+});
+
+test('Wilson does NOT collapse to zero width at the extremes', () => {
+  // This is the whole reason for not using the normal approximation: at 0 or n
+  // wins, p(1-p) is 0, so the textbook interval reports "100%, +/-0" from a
+  // handful of comparisons. That is a missing estimate presented as a certain one.
+  for (const n of [3, 4, 10, 40]) {
+    const all = wilsonInterval(n, n);
+    const none = wilsonInterval(0, n);
+    assert.ok(all.width > 0.05, `n=${n}: all-wins width ${all.width} is implausibly tight`);
+    assert.ok(none.width > 0.05, `n=${n}: no-wins width ${none.width} is implausibly tight`);
+    assert.equal(all.upper, 1);
+    assert.equal(none.lower, 0);
+    assert.ok(all.lower < 1, 'a perfect record must not have lower bound 1');
+    assert.ok(none.upper > 0, 'a zero record must not have upper bound 0');
+  }
+});
+
+test('Wilson narrows monotonically as n grows at a fixed proportion', () => {
+  let prev = Infinity;
+  for (const n of [8, 16, 40, 100, 400, 1000]) {
+    const ci = wilsonInterval(Math.round(n * 0.75), n);
+    assert.ok(ci.width < prev, `width did not shrink at n=${n}`);
+    prev = ci.width;
+  }
+});
+
+test('Wilson is asymmetric near the extremes — which is why we report both bounds', () => {
+  const ci = wilsonInterval(9, 10); // p̂ = 0.9
+  const below = 0.9 - ci.lower;
+  const above = ci.upper - 0.9;
+  assert.ok(Math.abs(below - above) > 0.02,
+    'expected a visibly asymmetric interval; collapsing it to ± would discard that');
+});
+
+test('Wilson converges on the point estimate for large n', () => {
+  const ci = wilsonInterval(7000, 10000);
+  assert.ok(Math.abs((ci.lower + ci.upper) / 2 - 0.7) < 0.01);
+  assert.ok(ci.width < 0.02);
+});
+
+test('beatsChance refuses to call a result that spans a coin flip', () => {
+  const bc = (w, n) => beatsChance(wilsonInterval(w, n), w, n);
+  assert.equal(bc(8, 11), 'inconclusive');   // 72.7%, interval spans 0.5
+  assert.equal(bc(3, 4), 'inconclusive');    // 75%, tiny n
+  assert.equal(bc(80, 110), 'better');       // same 72.7%, real n
+  assert.equal(bc(30, 110), 'worse');
+  // The case that motivated the exact test: Wilson alone calls this 'better'
+  // (lower bound 0.5101); the exact two-sided p is 0.125.
+  assert.ok(wilsonInterval(4, 4).lower > 0.5, 'precondition: Wilson excludes 0.5 here');
+  assert.equal(exactBinomialP(4, 4), 0.125);
+  assert.equal(bc(4, 4), 'inconclusive', 'four wins out of four is a coin flip one time in eight');
+});
+
+test('tally reports a Wilson interval and a verdict per candidate', () => {
+  const key = keyOf();
+  const r = tally(key, verdictsWhere(key, ['j1', 'j2'], ['alpha']));
+  const alpha = r.candidates.find((c) => c.name === 'alpha');
+  assert.equal(alpha.ci95.method, 'wilson');
+  assert.ok(alpha.ci95.lower > 0 && alpha.ci95.upper === 1);
+  assert.ok(['better', 'worse', 'inconclusive'].includes(alpha.verdict));
+});
+
+test('a small perfect record is reported as inconclusive, not as certainty', () => {
+  // 4 items, 1 judge, candidate wins every pair. Point estimate 100%.
+  const key = keyOf(['solo'], ['a', 'b', 'c', 'd'], 's');
+  const r = tally(key, verdictsWhere(key, ['j1'], ['solo']));
+  const c = r.candidates[0];
+  assert.equal(c.winRate, 1);
+  assert.ok(c.ci95.lower < 0.6,
+    'four wins out of four must not be reported as a confident result');
+  assert.equal(c.verdict, 'inconclusive');
 });

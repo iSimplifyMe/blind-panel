@@ -149,6 +149,103 @@ export function keyFor(pairs, seed) {
   return { seed, pairs };
 }
 
+// ---------------------------------------------------------------- intervals
+
+/**
+ * Wilson score interval for a binomial proportion.
+ *
+ * WHY NOT THE NORMAL APPROXIMATION. The textbook `p ± z·sqrt(p(1-p)/n)` fails
+ * exactly where evaluation panels live — small n and lopsided results:
+ *
+ *   - At 0 wins or n wins it collapses to zero width, reporting a result of
+ *     "100%, ±0" from four comparisons. That is not a tight estimate; it is a
+ *     missing one.
+ *   - It routinely produces bounds below 0 or above 1, which are not
+ *     probabilities.
+ *   - Its actual coverage at n < 40 is well below the nominal 95%, so it
+ *     overstates confidence precisely when a reader most needs the opposite.
+ *
+ * Wilson is bounded in [0,1] by construction, stays sensible at the extremes,
+ * and has far better small-sample coverage. It is asymmetric — the interval
+ * around 0.9 is not centred on 0.9 — so `lower` and `upper` are reported
+ * rather than a single ± figure, because collapsing an asymmetric interval to
+ * a symmetric one throws away the part that matters.
+ *
+ * @param {number} wins successes
+ * @param {number} n trials
+ * @param {number} z standard-normal quantile; 1.96 ≈ 95%
+ */
+export function wilsonInterval(wins, n, z = 1.96) {
+  if (!n) return { lower: 0, upper: 1, width: 1, method: 'wilson', z };
+  const p = wins / n;
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const centre = (p + z2 / (2 * n)) / denom;
+  const margin = (z / denom) * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n));
+  const lower = Math.max(0, centre - margin);
+  const upper = Math.min(1, centre + margin);
+  return {
+    lower: +lower.toFixed(4),
+    upper: +upper.toFixed(4),
+    width: +(upper - lower).toFixed(4),
+    method: 'wilson',
+    z,
+  };
+}
+
+/** log(n!) by summation. Exact enough for any panel size, no special functions. */
+function logFactorial(n) {
+  let s = 0;
+  for (let i = 2; i <= n; i++) s += Math.log(i);
+  return s;
+}
+
+/**
+ * EXACT two-sided binomial p-value against a fair coin.
+ *
+ * Wilson is the right interval to report, but it is still an approximation, and
+ * at very small n it is slightly LIBERAL at the extremes. Concretely: a perfect
+ * 4-of-4 record gives a Wilson lower bound of 0.5101, which excludes 0.5 and
+ * would be called a win — while the exact two-sided p for 4-of-4 is 0.125,
+ * nowhere near significant. Four consecutive wins is what a fair coin does one
+ * time in eight.
+ *
+ * A directional claim therefore requires BOTH: an interval that excludes 0.5 and
+ * an exact p below the threshold. Belt and braces, because the cost of the two
+ * errors is not symmetric — an over-claimed evaluation result is repeated in a
+ * deck long after anyone can check it.
+ *
+ * Computed in log space so it does not overflow on large panels.
+ */
+export function exactBinomialP(wins, n) {
+  if (!n) return 1;
+  const w = Math.max(wins, n - wins);   // symmetric under p = 0.5
+  if (w === n - w) return 1;
+  const lnFacN = logFactorial(n);
+  const lnHalfN = n * Math.log(2);
+  let tail = 0;
+  for (let k = w; k <= n; k++) {
+    tail += Math.exp(lnFacN - logFactorial(k) - logFactorial(n - k) - lnHalfN);
+  }
+  return Math.min(1, +(2 * tail).toFixed(6));
+}
+
+/**
+ * Is this candidate established as better than the reference?
+ *
+ * Requires the Wilson interval to exclude 0.5 AND the exact binomial test to
+ * reach `alpha`. A win rate of 0.72 whose interval spans 0.43–0.90 has
+ * established nothing however large the point estimate looks, and saying so is
+ * the entire purpose of reporting an interval.
+ */
+export function beatsChance(interval, wins, n, alpha = 0.05) {
+  const p = exactBinomialP(wins, n);
+  if (p >= alpha) return 'inconclusive';
+  if (interval.lower > 0.5) return 'better';
+  if (interval.upper < 0.5) return 'worse';
+  return 'inconclusive';
+}
+
 // ---------------------------------------------------------------- tally
 
 /**
@@ -180,13 +277,19 @@ export function tally(key, verdicts) {
   }
 
   const candidates = [...perCandidate.entries()]
-    .map(([name, { wins, n }]) => ({
-      name, wins, n,
-      winRate: n ? +(wins / n).toFixed(4) : 0,
-      // Normal-approximation half-width at 95%, so 3-of-4 is visibly not the
-      // same claim as 30-of-40.
-      ci95: n ? +(1.96 * Math.sqrt(0.25 / n)).toFixed(4) : 1,
-    }))
+    .map(([name, { wins, n }]) => {
+      const ci95 = wilsonInterval(wins, n);
+      return {
+        name, wins, n,
+        winRate: n ? +(wins / n).toFixed(4) : 0,
+        ci95,
+        exactP: exactBinomialP(wins, n),
+        // The question actually being asked. A win rate whose interval spans
+        // 0.5, or whose exact test does not reach 0.05, has not established
+        // that the candidate is better however large the point estimate looks.
+        verdict: beatsChance(ci95, wins, n),
+      };
+    })
     .sort((a, b) => b.winRate - a.winRate || a.name.localeCompare(b.name));
 
   return {
