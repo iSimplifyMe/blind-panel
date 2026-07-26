@@ -1,0 +1,17 @@
+{
+  "name": "blind-panel",
+  "version": "0.1.0",
+  "description": "Blind pairwise evaluation — seeded blinding, position-bias detection, and inter-rater agreement. The win rate is the number that means least.",
+  "type": "module",
+  "license": "MIT",
+  "author": "iSimplifyMe",
+  "main": "src/blind.js",
+  "exports": { ".": "./src/blind.js" },
+  "bin": { "blind-panel": "bin/blind-panel.mjs" },
+  "files": ["src", "bin", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node --test test/*.test.js" },
+  "keywords": ["blind", "evaluation", "ab-testing", "inter-rater", "agreement", "position-bias", "judging", "llm-judge"],
+  "repository": { "type": "git", "url": "git+https://github.com/iSimplifyMe/blind-panel.git" },
+  "homepage": "https://github.com/iSimplifyMe/blind-panel"
+}
