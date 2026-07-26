@@ -13,6 +13,9 @@ npx blind-panel tally --dir=./run --verdicts=./verdicts.json
 
 Zero dependencies. MIT.
 
+The reasoning behind it is published as a whitepaper —
+**[The Blind Panel: Position Bias and Agreement as Preconditions for a Win Rate](https://isimplifyme.com/whitepapers/the-blind-panel)**.
+
 ## Why
 
 When you put candidates in front of a panel — human or model — and ask which is
@@ -126,11 +129,23 @@ import { buildPairs, tally, problemsWith, sideBalance } from 'blind-panel';
 ## Origin
 
 Extracted from a project that needed to judge three candidate visual designs and
-wanted the judging to be worth something. The methodology owes a debt to
+wanted the judging to be worth something. The first smoke run of this package
+produced the six-zero result described above — the confound it exists to detect,
+occurring inside it — which is written up in §2 of the paper.
+
+The methodology owes a debt to
 [mshumer/Claude-of-Duty](https://github.com/mshumer/Claude-of-Duty), which ran
 eleven critics in blind A/B against real reference frames and published the
-result honestly — but shipped no tooling for it. This is that procedure made
+result honestly, but shipped no tooling for it. This is that procedure made
 executable and checkable.
+
+## More from iSimplifyMe
+
+- **[The Blind Panel](https://isimplifyme.com/whitepapers/the-blind-panel)** — the paper behind this package
+- [The Trust Ladder](https://isimplifyme.com/whitepapers/the-trust-ladder) — how a non-deterministic gate earns authority on measured precision
+- [The Finite Chain](https://isimplifyme.com/whitepapers/the-finite-chain) — the same construction-over-monitoring argument, applied to agent autonomy
+- [The AEO Standard](https://isimplifyme.com/labs/aeo-standard) and [`aeo-scan`](https://github.com/iSimplifyMe/aeo-scan) — the same tool-plus-rubric-plus-paper shape, for answer-engine optimization
+- [All whitepapers](https://isimplifyme.com/whitepapers)
 
 ## License
 
